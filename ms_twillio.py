@@ -53,7 +53,7 @@ def webhook():
     db.commit()
 
     # Enviar el mensaje al endpoint externo
-    endpoint_url = "http://localhost:8000/agents/4/ask"
+    endpoint_url = "http://3.143.148.65/builder/agents/4/ask"
     payload = {"question": message_body}
 
     headers = {
