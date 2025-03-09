@@ -32,6 +32,10 @@ auth_token = credentials['auth_token']
 twilio_phone_number = credentials['phone_number']
 
 client = Client(account_sid, auth_token)
+@app.route('/webhook', methods=['GET'])
+def hello():
+    return "hello"
+
 
 # Endpoint Webhook
 @app.route('/webhook', methods=['POST'])
