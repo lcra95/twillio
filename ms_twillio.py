@@ -1,3 +1,4 @@
+import json
 import os
 
 from dotenv import load_dotenv
@@ -7,6 +8,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 import requests
 import mysql.connector
 from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
 
 load_dotenv()
 
@@ -134,5 +136,7 @@ def send_messages():
         "numeros": numeros_unicos
     })
 
+
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0',port=5530, debug=True)
+    app.run(port=5530, debug=True)

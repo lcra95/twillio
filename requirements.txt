@@ -3,3 +3,4 @@ pandas
 flask
 mysql-connector-python
 python-dotenv
+b64
