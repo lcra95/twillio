@@ -143,7 +143,7 @@ def verify_instagram_webhook():
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
 
-    if mode == "subscribe" and token == os.getenv("VERIFICATION_TOKEN"):
+    if mode == "subscribe" and token == "e9c2ec1c256e455e434702446c0d2cdf35839a5e":
         return challenge  # ✅ Devuelve SOLO el challenge como texto plano
     else:
         os.abort(403, description="Verificación fallida")
