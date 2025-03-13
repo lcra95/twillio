@@ -38,6 +38,7 @@ client = Client(account_sid, auth_token)
 def hello():
     return "hello"
 
+
 # Endpoint Webhook
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -135,21 +136,11 @@ def send_messages():
         "numeros": numeros_unicos
     })
 
-# Endpoint Instagram Webhook
-@app.route('/instagram', methods=['GET'])
-def verify_instagram_webhook():
-    mode = request.args.get("hub.mode")
-    token = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
-
-    if mode == "subscribe" and token == "e9c2ec1c256e455e434702446c0d2cdf35839a5e":
-        return challenge  # ✅ Devuelve SOLO el challenge como texto plano
-    else:
-        os.abort(403, description="Verificación fallida")
-
 @app.route('/instagram', methods=['POST'])
 def handle_instagram_event():
     data = request.json
     print(f"📩 [Instagram] Evento recibido: {data}")
     return jsonify({"status": "Evento recibido"})
 
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5530, debug=True)
