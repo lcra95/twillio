@@ -136,17 +136,5 @@ def send_messages():
         "numeros": numeros_unicos
     })
 
-# Endpoint Instagram Webhook
-@app.route('/instagram', methods=['GET'])
-def verify_instagram_webhook():
-    mode = request.args.get("hub.mode")
-    token = request.args.get("hub.verify_token")
-    challenge = request.args.get("hub.challenge")
-
-    if mode == "subscribe" and token == os.getenv("VERIFICATION_TOKEN"):
-        return challenge  # ✅ Devuelve SOLO el challenge como texto plano
-    else:
-        abort(403, description="Verificación fallida")
-
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5530, debug=True)
