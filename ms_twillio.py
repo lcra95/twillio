@@ -38,7 +38,6 @@ client = Client(account_sid, auth_token)
 def hello():
     return "hello"
 
-
 # Endpoint Webhook
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -147,6 +146,12 @@ def verify_instagram_webhook():
         return challenge  # ✅ Devuelve SOLO el challenge como texto plano
     else:
         os.abort(403, description="Verificación fallida")
+
+@app.route('/instagram', methods=['POST'])
+async def handle_instagram_event():
+    data = await request.json
+    print(f"📩 [Instagram] Evento recibido: {data}")
+    return {"status": "Evento recibido"}
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5530, debug=True)
