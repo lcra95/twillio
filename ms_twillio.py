@@ -148,10 +148,8 @@ def verify_instagram_webhook():
         os.abort(403, description="Verificación fallida")
 
 @app.route('/instagram', methods=['POST'])
-async def handle_instagram_event():
-    data = await request.json
+def handle_instagram_event():
+    data = request.json
     print(f"📩 [Instagram] Evento recibido: {data}")
-    return {"status": "Evento recibido"}
+    return jsonify({"status": "Evento recibido"})
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5530, debug=True)
