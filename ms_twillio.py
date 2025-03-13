@@ -1,6 +1,5 @@
 import json
 import os
-
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from twilio.rest import Client
@@ -9,6 +8,7 @@ import requests
 import mysql.connector
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
+from flask import abort
 
 load_dotenv()
 
@@ -34,10 +34,10 @@ auth_token = credentials['auth_token']
 twilio_phone_number = credentials['phone_number']
 
 client = Client(account_sid, auth_token)
+
 @app.route('/', methods=['GET'])
 def hello():
     return "hello"
-
 
 # Endpoint Webhook
 @app.route('/webhook', methods=['POST'])
@@ -45,16 +45,14 @@ def webhook():
     from_number = request.form.get('From')
     message_body = request.form.get('Body')
 
-    print(f"📩 Nuevo mensaje recibido de {from_number}: {message_body}")
+    print(f"\U0001F4E9 Nuevo mensaje recibido de {from_number}: {message_body}")
 
-    # Registrar mensaje recibido en la base de datos
     cursor.execute("""
         INSERT INTO messages (phone_number, message_body, direction)
         VALUES (%s, %s, 'incoming')
     """, (from_number, message_body))
     db.commit()
 
-    # Enviar el mensaje al endpoint externo
     endpoint_url = "http://rypsystems.cl/builder/agents/4/ask"
     payload = {"question": message_body}
 
@@ -73,26 +71,22 @@ def webhook():
     except Exception as e:
         respuesta_final = f"❌ Error de conexión: {str(e)}"
 
-    # Registrar mensaje de salida en la base de datos
     cursor.execute("""
         INSERT INTO messages (phone_number, message_body, direction)
         VALUES (%s, %s, 'outgoing')
     """, (from_number, respuesta_final))
     db.commit()
 
-    # Enviar la respuesta al usuario por WhatsApp
     twilio_response = MessagingResponse()
     twilio_response.message(f"🤖 Respuesta del asistente: {respuesta_final}")
 
     return str(twilio_response)
 
-# Nuevo endpoint que envía mensajes a los contactos recientes
 @app.route('/send-messages', methods=['POST'])
 def send_messages():
     now = datetime.now()
     ultimas_24_horas = now - timedelta(hours=24)
 
-    # Obtener contactos recientes desde la tabla de mensajes
     cursor.execute("""
         SELECT DISTINCT phone_number 
         FROM messages 
@@ -105,7 +99,6 @@ def send_messages():
     if not numeros_unicos:
         return jsonify({"status": "No hay contactos recientes para enviar mensajes."})
 
-    # Mensaje a enviar
     mensaje = """
     🌟 ¡Gracias por contactarnos! 🌟
     Te recordamos que estamos aquí para ayudarte. Si tienes alguna duda, solo responde este mensaje. 😊
@@ -119,7 +112,6 @@ def send_messages():
                 to=numero
             )
 
-            # Registrar mensaje de salida en la base de datos
             cursor.execute("""
                 INSERT INTO messages (phone_number, message_body, direction)
                 VALUES (%s, %s, 'outgoing')
@@ -136,7 +128,17 @@ def send_messages():
         "numeros": numeros_unicos
     })
 
+# Endpoint Instagram Webhook
+@app.route('/instagram', methods=['GET'])
+def verify_instagram_webhook():
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
 
+    if mode == "subscribe" and token == os.getenv("VERIFICATION_TOKEN"):
+        return challenge  # ✅ Devuelve SOLO el challenge como texto plano
+    else:
+        abort(403, description="Verificación fallida")
 
 if __name__ == '__main__':
     app.run(port=5530, debug=True)
