@@ -140,7 +140,30 @@ def send_messages():
 def handle_instagram_event():
     data = request.json
     print(f"📩 [Instagram] Evento recibido: {data}")
-    return jsonify({"status": "Evento recibido"})
+
+    # Convertimos el diccionario 'data' a string JSON
+    message_body_str = json.dumps(data, ensure_ascii=False)
+
+    # Ejemplo de valores por defecto si no los obtienes de `data`
+    phone_number = "Desconocido"
+    direction = "incoming"
+
+    # Inserción en la tabla `messages`
+    insert_query = """
+        INSERT INTO messages (phone_number, message_body, direction)
+        VALUES (%s, %s, %s)
+    """
+    values = (phone_number, message_body_str, direction)
+
+    try:
+        cursor.execute(insert_query, values)
+        db.commit()
+    except mysql.connector.Error as err:
+        db.rollback()
+        print(f"Error al insertar en DB: {err}")
+        return jsonify({"status": "Error al insertar en la base de datos"}), 500
+
+    return jsonify({"status": "Evento recibido"}), 200
 
 @app.route('/validation', methods=['GET'])
 def verify_instagram_webhook():
