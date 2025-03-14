@@ -136,7 +136,7 @@ def send_messages():
         "numeros": numeros_unicos
     })
 
-@app.route('/instagram', methods=['POST'])
+@app.route('/validation', methods=['POST'])
 def handle_instagram_event():
     data = request.json
     print(f"📩 [Instagram] Evento recibido: {data}")
