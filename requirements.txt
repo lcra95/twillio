@@ -4,3 +4,4 @@ flask
 mysql-connector-python
 python-dotenv
 b64
+sqlalchemy

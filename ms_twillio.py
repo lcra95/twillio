@@ -1,209 +1,128 @@
+# app.py
 import json
 import os
+from datetime import datetime
 
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
-from twilio.rest import Client
-from twilio.twiml.messaging_response import MessagingResponse
 import requests
-import mysql.connector
-from datetime import datetime, timedelta
-from bs4 import BeautifulSoup
+
+from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
+
+# Importamos la configuración de DB
+from database import engine, SessionLocal
+# Importamos los modelos
+from models import Base, Message, Number
 
 load_dotenv()
-
 env = os.environ
 
 app = Flask(__name__)
 
-# Conexión a la base de datos MySQL
-db = mysql.connector.connect(
-    host=env.get('DB_HOST'),
-    user=env.get('DB_USER'),
-    password=env.get('DB_PASSWORD'),
-    database=env.get('DB_NAME'),
-    port=env.get('DB_PORT')
-)
-cursor = db.cursor(dictionary=True)
+# Si fuera necesario, crear las tablas (opcional en producción)
+Base.metadata.create_all(bind=engine)
 
-# Obtener credenciales de Twilio desde la base de datos
-cursor.execute("SELECT * FROM twilio_credentials LIMIT 1")
-credentials = cursor.fetchone()
-account_sid = credentials['account_sid']
-auth_token = credentials['auth_token']
-twilio_phone_number = credentials['phone_number']
 
-client = Client(account_sid, auth_token)
 @app.route('/', methods=['GET'])
 def hello():
     return "hello"
 
-
-# Endpoint Webhook
+# Endpoint Webhook que solo registra el mensaje recibido en la tabla `message`
 @app.route('/webhook', methods=['POST'])
 def webhook():
     from_number = request.form.get('From')
     message_body = request.form.get('Body')
-
+    twilio_phone_number = request.form.get('To')
     print(f"📩 Nuevo mensaje recibido de {from_number}: {message_body}")
 
-    # Registrar mensaje recibido en la base de datos
-    cursor.execute("""
-        INSERT INTO messages (phone_number, message_body, direction)
-        VALUES (%s, %s, 'incoming')
-    """, (from_number, message_body))
-    db.commit()
-
-    # Enviar el mensaje al endpoint externo
-    endpoint_url = "http://rypsystems.cl/builder/agents/4/ask"
-    payload = {"question": message_body}
-
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "insomnia/10.3.1"
-    }
-
+    session = SessionLocal()
     try:
-        response = requests.post(endpoint_url, json=payload, headers=headers)
-        if response.status_code == 200:
-            response_data = response.json()
-            respuesta_final = response_data.get('answer', 'No se recibió una respuesta válida del servicio.')
-        else:
-            respuesta_final = "❌ Error al consultar el servicio externo."
-    except Exception as e:
-        respuesta_final = f"❌ Error de conexión: {str(e)}"
+        # Se asume que el mensaje fue enviado al número de Twilio y se utiliza para obtener el number_id.
+        number_obj = session.query(Number).filter(Number.number == twilio_phone_number).first()
+        if not number_obj:
+            print(f"No se encontró el número {twilio_phone_number} en la tabla number.")
+            return "Número receptor no registrado en el sistema", 400
 
-    # Registrar mensaje de salida en la base de datos
-    cursor.execute("""
-        INSERT INTO messages (phone_number, message_body, direction)
-        VALUES (%s, %s, 'outgoing')
-    """, (from_number, respuesta_final))
-    db.commit()
+        new_message = Message(
+            to=twilio_phone_number,
+            from_=from_number,
+            direction="incoming",
+            message=message_body,
+            number_id=number_obj.id
+        )
+        session.add(new_message)
+        session.commit()
+    except SQLAlchemyError as e:
+        session.rollback()
+        print("Error al insertar mensaje:", e)
+        return "Error interno", 500
+    finally:
+        session.close()
 
-    # Enviar la respuesta al usuario por WhatsApp
-    twilio_response = MessagingResponse()
-    twilio_response.message(f"🤖 Respuesta del asistente: {respuesta_final}")
+    # Se elimina el envío de respuesta automática
+    return "Mensaje recibido", 200
 
-    return str(twilio_response)
 
-# Nuevo endpoint que envía mensajes a los contactos recientes
-@app.route('/send-messages', methods=['POST'])
-def send_messages():
-    now = datetime.now()
-    ultimas_24_horas = now - timedelta(hours=24)
-
-    # Obtener contactos recientes desde la tabla de mensajes
-    cursor.execute("""
-        SELECT DISTINCT phone_number 
-        FROM messages 
-        WHERE timestamp >= %s AND direction = 'incoming'
-    """, (ultimas_24_horas,))
-    contactos = cursor.fetchall()
-
-    numeros_unicos = [contacto['phone_number'] for contacto in contactos]
-
-    if not numeros_unicos:
-        return jsonify({"status": "No hay contactos recientes para enviar mensajes."})
-
-    # Mensaje a enviar
-    mensaje = """
-    🌟 ¡Gracias por contactarnos! 🌟
-    Te recordamos que estamos aquí para ayudarte. Si tienes alguna duda, solo responde este mensaje. 😊
-    """
-
-    for numero in numeros_unicos:
-        try:
-            client.messages.create(
-                body=mensaje,
-                from_=f'whatsapp:{twilio_phone_number}',
-                to=numero
-            )
-
-            # Registrar mensaje de salida en la base de datos
-            cursor.execute("""
-                INSERT INTO messages (phone_number, message_body, direction)
-                VALUES (%s, %s, 'outgoing')
-            """, (numero, mensaje))
-            db.commit()
-
-            print(f"✅ Mensaje enviado a {numero}")
-        except Exception as e:
-            print(f"❌ Error al enviar mensaje a {numero}: {str(e)}")
-
-    return jsonify({
-        "status": "Mensajes enviados exitosamente",
-        "total_enviados": len(numeros_unicos),
-        "numeros": numeros_unicos
-    })
-
+# Endpoint de validación que registra el evento recibido (por ejemplo, de Instagram)
 @app.route('/validation', methods=['POST'])
 def handle_instagram_event():
     data = request.json
     print(f"📩 [Instagram] Evento recibido: {data}")
 
-    # Convertimos el diccionario 'data' a string JSON
-    message_body_str = json.dumps(data, ensure_ascii=False)
-
-    # Ejemplo de valores por defecto si no los obtienes de `data`
-    phone_number = "Desconocido"
-    direction = "incoming"
-
-    # Inserción en la tabla `messages`
-    insert_query = """
-        INSERT INTO messages (phone_number, message_body, direction)
-        VALUES (%s, %s, %s)
-    """
-    values = (phone_number, message_body_str, direction)
-
+    session = SessionLocal()
     try:
-        cursor.execute(insert_query, values)
-        db.commit()
-    except mysql.connector.Error as err:
-        db.rollback()
-        print(f"Error al insertar en DB: {err}")
+        for entry in data.get("entry", []):
+            for messaging in entry.get("messaging", []):
+                sender_id = messaging.get("sender", {}).get("id")
+                recipient_id = messaging.get("recipient", {}).get("id")
+                message_info = messaging.get("message", {})
+
+                # Se extrae el texto del mensaje, mid y reply_to (si existe)
+                text = message_info.get("text", "")
+                mid = message_info.get("mid")
+                reply_to = None
+                if "reply_to" in message_info and message_info["reply_to"]:
+                    reply_to = message_info["reply_to"].get("mid")
+
+                # Se obtiene el número receptor usando el recipient_id
+                number_obj = session.query(Number).filter(Number.number == recipient_id).first()
+                if not number_obj:
+                    print(f"No se encontró el número {recipient_id} en la tabla number.")
+                    continue
+
+                new_message = Message(
+                    to=recipient_id,
+                    from_=sender_id,
+                    direction="incoming",
+                    message=text,
+                    mid=mid,
+                    reply_to=reply_to,
+                    number_id=number_obj.id
+                )
+                session.add(new_message)
+        session.commit()
+    except SQLAlchemyError as e:
+        session.rollback()
+        print("Error al insertar evento en DB:", e)
         return jsonify({"status": "Error al insertar en la base de datos"}), 500
+    finally:
+        session.close()
 
     return jsonify({"status": "Evento recibido"}), 200
+
 
 @app.route('/validation', methods=['GET'])
 def verify_instagram_webhook():
-     mode = request.args.get("hub.mode")
-     token = request.args.get("hub.verify_token")
-     challenge = request.args.get("hub.challenge")
- 
-     if mode == "subscribe" and token == "e9c2ec1c256e455e434702446c0d2cdf35839a5e":
-         return challenge  # ✅ Devuelve SOLO el challenge como texto plano
-     else:
-         os.abort(403, description="Verificación fallida")
- 
-@app.route('/instagram', methods=['POST'])
-def handle_instagram_event1():
-    data = request.json
-    print(f"📩 [Instagram] Evento recibido: {data}")
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
 
-    # Convertimos el diccionario 'data' a string JSON
-    message_body_str = json.dumps(data, ensure_ascii=False)
+    if mode == "subscribe" and token == "e9c2ec1c256e455e434702446c0d2cdf35839a5e":
+        return challenge, 200
+    else:
+        return "Verificación fallida", 403
 
-    # Ejemplo de valores por defecto si no los obtienes de `data`
-    phone_number = "Desconocido"
-    direction = "incoming"
-
-    # Inserción en la tabla `messages`
-    insert_query = """
-        INSERT INTO messages (phone_number, message_body, direction)
-        VALUES (%s, %s, %s)
-    """
-    values = (phone_number, message_body_str, direction)
-
-    try:
-        cursor.execute(insert_query, values)
-        db.commit()
-    except mysql.connector.Error as err:
-        db.rollback()
-        print(f"Error al insertar en DB: {err}")
-        return jsonify({"status": "Error al insertar en la base de datos"}), 500
-
-    return jsonify({"status": "Evento recibido"}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5530, debug=True)
