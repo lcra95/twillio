@@ -6,7 +6,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 import requests
-
+from sqlalchemy import text
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -26,20 +26,54 @@ Base.metadata.create_all(bind=engine)
 
 @app.route('/', methods=['GET'])
 def hello():
-    return "hello"
+    session = SessionLocal()
+    try:
+        # Verificar a qué base de datos estamos conectados
+        current_db = session.execute(text("SELECT DATABASE()")).scalar()
+        print("Base de datos conectada:", current_db)
+        
+        # Consultar todos los registros de la tabla number
+        numbers = session.query(Number).all()
+        result = []
+        for number in numbers:
+            result.append({
+                "id": number.id,
+                "number_type": number.number_type,
+                "number": number.number,
+                "account_sid": number.account_sid,
+                "auth_token": number.auth_token,
+                "agente_id": number.agente_id,
+                "status": number.status,
+                "created_at": number.created_at.isoformat() if number.created_at else None,
+                "updated_at": number.updated_at.isoformat() if number.updated_at else None,
+                "agent_status": number.agent_status
+            })
+        return jsonify({
+            "database": current_db,
+            "numbers": result
+        }), 200
+    except SQLAlchemyError as e:
+        print("Error al obtener los números:", e)
+        return jsonify({"error": "Error al obtener los números"}), 500
+    finally:
+        session.close()
 
 # Endpoint Webhook que solo registra el mensaje recibido en la tabla `message`
 @app.route('/webhook', methods=['POST'])
 def webhook():
+
     from_number = request.form.get('From')
     message_body = request.form.get('Body')
     twilio_phone_number = request.form.get('To')
-    print(f"📩 Nuevo mensaje recibido de {from_number}: {message_body}")
+    mid=request.form.get("SmsMessageSid")
+    reply_to=request.form.get("OriginalRepliedMessageSid")
 
     session = SessionLocal()
     try:
         # Se asume que el mensaje fue enviado al número de Twilio y se utiliza para obtener el number_id.
-        number_obj = session.query(Number).filter(Number.number == twilio_phone_number).first()
+        formatted_twilio_number = (twilio_phone_number).split('+')
+        number_obj = session.query(Number).filter(Number.number == formatted_twilio_number[1]).first()
+        print(number_obj, formatted_twilio_number[1])
         if not number_obj:
             print(f"No se encontró el número {twilio_phone_number} en la tabla number.")
             return "Número receptor no registrado en el sistema", 400
@@ -49,7 +83,10 @@ def webhook():
             from_=from_number,
             direction="incoming",
             message=message_body,
-            number_id=number_obj.id
+            number_id=number_obj.id,
+            mid=mid,
+            reply_to=reply_to,
+            object=str(request.form)
         )
         session.add(new_message)
         session.commit()
@@ -98,7 +135,8 @@ def handle_instagram_event():
                     message=text,
                     mid=mid,
                     reply_to=reply_to,
-                    number_id=number_obj.id
+                    number_id=number_obj.id,
+                    object=str(data)
                 )
                 session.add(new_message)
         session.commit()

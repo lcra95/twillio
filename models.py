@@ -17,6 +17,7 @@ class Message(Base):
     updated_at = Column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
     mid = Column(String(255), nullable=True)
     reply_to = Column(String(255), nullable=True)
+    object= Column(Text, nullable=False)
 
 
 class Number(Base):
