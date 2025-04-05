@@ -160,38 +160,29 @@ def validation():
             return "Verificación fallida", 403
 
 
-## Endpoint actualizado para recibir JSON
 @app.route('/update-tasa', methods=['POST'])
 def update_tasa():
-    # Obtener datos JSON del cuerpo de la solicitud
-    data = request.get_json()
+    # Intentar primero obtener el parámetro de form-data
+    tasa_value = request.form.get('tasa')
     
-    if not data or 'tasa' not in data:
-        return jsonify({"error": "Falta el parámetro 'tasa' en el JSON"}), 400
+    # Si no está en form-data, intentar obtenerlo de JSON
+    if not tasa_value:
+        try:
+            data = request.get_json()
+            if data and 'tasa' in data:
+                tasa_value = str(data['tasa'])
+        except:
+            pass
+    
+    if not tasa_value:
+        return jsonify({"error": "Falta el parámetro 'tasa'"}), 400
 
     try:
-        tasa_value = float(data['tasa'])
-    except (ValueError, TypeError):
+        tasa_value = float(tasa_value)
+    except ValueError:
         return jsonify({"error": "Valor de 'tasa' inválido"}), 400
-
-    session = SessionLocal()
-    try:
-        # Se busca si ya existe un registro en la tabla 'tasa'
-        tasa_obj = session.query(Tasa).first()
-        if tasa_obj:
-            tasa_obj.tasa = tasa_value
-        else:
-            tasa_obj = Tasa(tasa=tasa_value)
-            session.add(tasa_obj)
-
-        session.commit()
-        return jsonify({"status": "Tasa actualizada", "tasa": str(tasa_value)}), 200
-    except SQLAlchemyError as e:
-        session.rollback()
-        print("Error al actualizar la tasa:", e)
-        return jsonify({"error": "Error interno al actualizar la tasa"}), 500
-    finally:
-        session.close()
+        
+    # Resto del código...
 
 
 if __name__ == '__main__':
