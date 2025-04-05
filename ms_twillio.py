@@ -160,17 +160,18 @@ def validation():
             return "Verificación fallida", 403
 
 
-# Nuevo endpoint para actualizar la tasa
+## Endpoint actualizado para recibir JSON
 @app.route('/update-tasa', methods=['POST'])
 def update_tasa():
-    # Se espera recibir el parámetro 'tasa' (por ejemplo, vía form-data)
-    tasa_value = request.form.get('tasa')
-    if not tasa_value:
-        return jsonify({"error": "Falta el parámetro 'tasa'"}), 400
+    # Obtener datos JSON del cuerpo de la solicitud
+    data = request.get_json()
+    
+    if not data or 'tasa' not in data:
+        return jsonify({"error": "Falta el parámetro 'tasa' en el JSON"}), 400
 
     try:
-        tasa_value = float(tasa_value)
-    except ValueError:
+        tasa_value = float(data['tasa'])
+    except (ValueError, TypeError):
         return jsonify({"error": "Valor de 'tasa' inválido"}), 400
 
     session = SessionLocal()
