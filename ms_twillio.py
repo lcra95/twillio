@@ -1,26 +1,24 @@
-# app.py
 import json
 import os
 from datetime import datetime
 
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify
+from flask import Flask, request, session, jsonify
 import requests
-from sqlalchemy import text
-from sqlalchemy import func
+from sqlalchemy import text, func
 from sqlalchemy.exc import SQLAlchemyError
 
 # Importamos la configuración de DB
 from database import engine, SessionLocal
-# Importamos los modelos
-from models import Base, Message, Number
+# Importamos los modelos, incluyendo el nuevo modelo Tasa
+from models import Base, Message, Number, Tasa
 
 load_dotenv()
 env = os.environ
 
 app = Flask(__name__)
 
-# Si fuera necesario, crear las tablas (opcional en producción)
+# Crear las tablas (opcional en producción)
 Base.metadata.create_all(bind=engine)
 
 
@@ -58,20 +56,20 @@ def hello():
     finally:
         session.close()
 
+
 # Endpoint Webhook que solo registra el mensaje recibido en la tabla `message`
 @app.route('/webhook', methods=['POST'])
 def webhook():
-
     from_number = request.form.get('From')
     message_body = request.form.get('Body')
     twilio_phone_number = request.form.get('To')
-    mid=request.form.get("SmsMessageSid")
-    reply_to=request.form.get("OriginalRepliedMessageSid")
+    mid = request.form.get("SmsMessageSid")
+    reply_to = request.form.get("OriginalRepliedMessageSid")
 
     session = SessionLocal()
     try:
         # Se asume que el mensaje fue enviado al número de Twilio y se utiliza para obtener el number_id.
-        formatted_twilio_number = (twilio_phone_number).split('+')
+        formatted_twilio_number = twilio_phone_number.split('+')
         number_obj = session.query(Number).filter(Number.number == formatted_twilio_number[1]).first()
         print(number_obj, formatted_twilio_number[1])
         if not number_obj:
@@ -97,7 +95,6 @@ def webhook():
     finally:
         session.close()
 
-    # Se elimina el envío de respuesta automática
     return "Mensaje recibido", 200
 
 
@@ -116,7 +113,7 @@ def handle_instagram_event():
                 message_info = messaging.get("message", {})
 
                 # Se extrae el texto del mensaje, mid y reply_to (si existe)
-                text = message_info.get("text", "")
+                text_msg = message_info.get("text", "")
                 mid = message_info.get("mid")
                 reply_to = None
                 if "reply_to" in message_info and message_info["reply_to"]:
@@ -132,7 +129,7 @@ def handle_instagram_event():
                     to=recipient_id,
                     from_=sender_id,
                     direction="incoming",
-                    message=text,
+                    message=text_msg,
                     mid=mid,
                     reply_to=reply_to,
                     number_id=number_obj.id,
@@ -151,15 +148,49 @@ def handle_instagram_event():
 
 
 @app.route('/validation', methods=['GET'])
-def verify_instagram_webhook():
+def validation():
     mode = request.args.get("hub.mode")
-    token = request.args.get("hub.verify_token")
+    verify_token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
 
-    if mode == "subscribe" and token == "e9c2ec1c256e455e434702446c0d2cdf35839a5e":
-        return challenge, 200
-    else:
-        return "Verificación fallida", 403
+    if mode and verify_token and challenge:
+        if mode == "subscribe" and verify_token == "e9c2ec1c256e455e434702446c0d2cdf35839a5e":
+            return challenge, 200
+        else:
+            return "Verificación fallida", 403
+
+
+# Nuevo endpoint para actualizar la tasa
+@app.route('/update-tasa', methods=['POST'])
+def update_tasa():
+    # Se espera recibir el parámetro 'tasa' (por ejemplo, vía form-data)
+    tasa_value = request.form.get('tasa')
+    if not tasa_value:
+        return jsonify({"error": "Falta el parámetro 'tasa'"}), 400
+
+    try:
+        tasa_value = float(tasa_value)
+    except ValueError:
+        return jsonify({"error": "Valor de 'tasa' inválido"}), 400
+
+    session = SessionLocal()
+    try:
+        # Se busca si ya existe un registro en la tabla 'tasa'
+        tasa_obj = session.query(Tasa).first()
+        if tasa_obj:
+            tasa_obj.tasa = tasa_value
+        else:
+            tasa_obj = Tasa(tasa=tasa_value)
+            session.add(tasa_obj)
+
+        session.commit()
+        return jsonify({"status": "Tasa actualizada", "tasa": str(tasa_value)}), 200
+    except SQLAlchemyError as e:
+        session.rollback()
+        print("Error al actualizar la tasa:", e)
+        return jsonify({"error": "Error interno al actualizar la tasa"}), 500
+    finally:
+        session.close()
 
 
 if __name__ == '__main__':

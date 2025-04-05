@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func, DECIMAL
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -8,7 +8,7 @@ class Message(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     to = Column(String(50), nullable=False)
-    # "from" es palabra reservada, por ello se utiliza "from_" y se mapea a la columna "from"
+    # "from" es palabra reservada, se utiliza "from_" y se mapea a la columna "from"
     from_ = Column("from", String(50), nullable=False)
     direction = Column(String(50), nullable=False)
     message = Column(Text, nullable=False)
@@ -17,7 +17,7 @@ class Message(Base):
     updated_at = Column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
     mid = Column(String(255), nullable=True)
     reply_to = Column(String(255), nullable=True)
-    object= Column(Text, nullable=False)
+    object = Column(Text, nullable=False)
 
 
 class Number(Base):
@@ -33,3 +33,11 @@ class Number(Base):
     created_at = Column(DateTime, server_default=func.current_timestamp())
     updated_at = Column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
     agent_status = Column(Integer, nullable=False, default=0)
+
+
+# Modelo para la tabla "tasa"
+class Tasa(Base):
+    __tablename__ = "tasa"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tasa = Column(DECIMAL(10,4), nullable=False)
